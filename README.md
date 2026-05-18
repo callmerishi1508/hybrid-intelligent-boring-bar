@@ -67,6 +67,26 @@ Files produced
 - `model_artifacts/` — trained model, scaler, and metadata
 - `output/` — copies of the artifacts and smoke log
 
+Screenshots
+-----------
+Presentation-ready screenshots are included in the `screenshots/` folder. These are placeholder images you can replace with high-resolution captures from your environment:
+
+- `screenshots/simulink_model.svg`
+- `screenshots/azure_digital_twin_explorer.svg`
+- `screenshots/telemetry_dryrun.svg`
+- `screenshots/validation_plots.svg`
+- `screenshots/github_overview.svg`
+
+Architecture Diagram
+--------------------
+A system architecture diagram is provided in `docs/system_architecture.svg`. It visualizes the flow:
+
+Simulink/Simscape → H∞ Robust Controller → CNN Optimization → Hybrid Fused Controller → CSV Telemetry Export → Python Telemetry Pipeline → Azure IoT Hub → Azure Digital Twin
+
+Telemetry pipeline
+------------------
+The `main.py` + `telemetry_reader.py` implements a merged telemetry stream that combines CSV exports (Simscape+CNN+fusion) into a normalized telemetry payload and supports a dry-run mode. This is suitable for demos and integration testing before connecting to live Azure resources (see `setup.md`).
+
 If you want, I can:
 - Pin exact package versions into a `pyproject.toml` or `constraints.txt`.
 - Create a small `run.sh` / `run.ps1` helper script.
