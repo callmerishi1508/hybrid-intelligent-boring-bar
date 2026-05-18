@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# VSCode
+.vscode/
+
+# MATLAB/Simulink
+*.asv
+*.slxc
+*.slx~
+slprj/
+_model_rtw/
+*_ert_rtw/
+*.mex*
+*.mdl
+*.slx
+*.autosave
+
+# Output and logs
+output/
+*.log
+*.mat
+
+# Model artifacts (keep or ignore depending on preference)
+model_artifacts/
+
+# Azure secrets
+*.pem
+*.pfx
+secrets.json
+
+# OS
+.DS_Store
+Thumbs.db
