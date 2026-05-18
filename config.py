@@ -59,6 +59,28 @@ def has_iothub_connection():
 def has_adt_credentials():
     return bool(ADT_ENDPOINT and (ADT_CLIENT_ID and ADT_CLIENT_SECRET))
 
+def ensure_live_credentials():
+    """Validate that all required credentials for live ADT updates are present.
+    Returns (success, error_message) tuple.
+    """
+    missing = []
+    if not ADT_ENDPOINT:
+        missing.append("ADT_ENDPOINT")
+    if not ADT_TENANT_ID:
+        missing.append("ADT_TENANT_ID")
+    if not ADT_CLIENT_ID:
+        missing.append("ADT_CLIENT_ID")
+    if not ADT_CLIENT_SECRET:
+        missing.append("ADT_CLIENT_SECRET")
+    if not DIGITAL_TWIN_ID:
+        missing.append("DIGITAL_TWIN_ID")
+    if missing:
+        msg = f"Missing required environment variables for live ADT mode: {', '.join(missing)}"
+        return False, msg
+    if not IOTHUB_DEVICE_CONNECTION_STRING:
+        log.warning("IOTHUB_DEVICE_CONNECTION_STRING not set; IoT Hub messages will be skipped")
+    return True, None
+
 if __name__ == "__main__":
     configure_logging("DEBUG")
     log.info("IOTHUB connection string present: %s", bool(IOTHUB_DEVICE_CONNECTION_STRING))

@@ -46,6 +46,7 @@ def parse_args():
     p.add_argument("--source", default="merged", choices=["merged", "simscape", "u_cnn", "integrated_control"],
                    help="Choose a telemetry source or use merged project stream")
     p.add_argument("--dry-run", action="store_true", help="Do not call Azure services; just print payloads")
+    p.add_argument("--live", action="store_true", help="Enable live updates to Azure Digital Twin and IoT Hub (requires credentials)")
     p.add_argument("--max-rows", type=int, default=50)
     p.add_argument("--no-simulate", dest="simulate", action="store_false", help="Disable real-time simulation sleeps")
     p.add_argument("--speed", type=float, default=SIMULATION_SPEED_FACTOR)
@@ -68,29 +69,47 @@ def main():
 
     reader = TelemetryReader(source_csv, mapping)
 
-    # Prepare ADT client if not dry-run
+    # Prepare ADT client if live mode enabled (and not dry-run)
     adt_client = None
     iothub_client = None
     twin_updater = None
-    if not args.dry_run:
+    mode_label = "dry-run"
+    
+    if args.live and not args.dry_run:
+        mode_label = "live"
         if ClientSecretCredential is None:
             log.error("Azure SDK imports failed. Install azure-identity and azure-digitaltwins-core")
             sys.exit(1)
-        if not has_adt_credentials():
-            log.error("ADT credentials missing in environment")
+        # Validate credentials using new helper
+        from config import ensure_live_credentials
+        success, error_msg = ensure_live_credentials()
+        if not success:
+            log.error(error_msg)
             sys.exit(1)
-        cred = ClientSecretCredential(
-            tenant_id=__import__('config').ADT_TENANT_ID,
-            client_id=__import__('config').ADT_CLIENT_ID,
-            client_secret=__import__('config').ADT_CLIENT_SECRET,
-        )
-        adt_client = DigitalTwinsClient(__import__('config').ADT_ENDPOINT, cred)
-        twin_updater = TwinUpdater(adt_client)
+        
+        try:
+            cred = ClientSecretCredential(
+                tenant_id=__import__('config').ADT_TENANT_ID,
+                client_id=__import__('config').ADT_CLIENT_ID,
+                client_secret=__import__('config').ADT_CLIENT_SECRET,
+            )
+            adt_client = DigitalTwinsClient(__import__('config').ADT_ENDPOINT, cred)
+            twin_updater = TwinUpdater(adt_client)
+            log.info("Azure Digital Twins client initialized")
+        except Exception as e:
+            log.error(f"Failed to initialize Azure clients: {e}")
+            sys.exit(1)
 
-        if has_iothub_connection():
-            iothub_client = IoTHubDeviceClient.create_from_connection_string(__import__('config').IOTHUB_DEVICE_CONNECTION_STRING)
+        if __import__('config').has_iothub_connection():
+            try:
+                iothub_client = IoTHubDeviceClient.create_from_connection_string(__import__('config').IOTHUB_DEVICE_CONNECTION_STRING)
+                log.info("IoT Hub device client initialized")
+            except Exception as e:
+                log.warning(f"Failed to initialize IoT Hub client: {e}")
 
-    print("Starting stream. dry-run=", args.dry_run)
+    print(f"Starting stream. mode={mode_label}, max_rows={args.max_rows}, speed={args.speed}x")
+    success_count = 0
+    error_count = 0
     for i, row in enumerate(reader.stream(simulate_real_time=args.simulate, speed=args.speed, max_rows=args.max_rows)):
         # Build payload from normalized telemetry keys emitted by TelemetryReader
         payload = {
@@ -103,24 +122,51 @@ def main():
             "u_cnn": _normalize_payload_value(row.get("u_cnn")),
             "u_act": _normalize_payload_value(row.get("u_act")),
         }
-        if args.dry_run or twin_updater is None:
+        
+        if not args.live or args.dry_run or twin_updater is None:
+            # Dry-run: print payloads
             print(json.dumps(payload))
         else:
-            # send telemetry to IoT Hub (device SDK)
+            # Live mode: send to Azure
+            msg_sent = False
+            twin_updated = False
+            
+            # Send telemetry to IoT Hub
             if iothub_client:
                 try:
                     iothub_client.send_message(json.dumps(payload))
-                except Exception:
-                    log.exception("Failed to send IoT Hub message")
-            # patch digital twin
-            patch = [{"op": "replace", "path": "/telemetry/latest", "value": payload}]
-            twin_updater.update_properties(__import__('config').DIGITAL_TWIN_ID, patch)
+                    msg_sent = True
+                except Exception as ex:
+                    log.warning(f"Failed to send IoT Hub message: {ex}")
+            
+            # Patch digital twin properties (patch each property individually for flexibility)
+            if twin_updater:
+                patch = [
+                    {"op": "replace", "path": "/vibrationAmplitude", "value": payload.get("vibrationAmplitude")},
+                    {"op": "replace", "path": "/cnnOutput", "value": payload.get("cnnOutput")},
+                    {"op": "replace", "path": "/actuatorForce", "value": payload.get("actuatorForce")},
+                    {"op": "replace", "path": "/u_hinf", "value": payload.get("u_hinf")},
+                    {"op": "replace", "path": "/u_cnn", "value": payload.get("u_cnn")},
+                    {"op": "replace", "path": "/u_act", "value": payload.get("u_act")},
+                ]
+                twin_updated = twin_updater.update_properties(__import__('config').DIGITAL_TWIN_ID, patch)
+            
+            if msg_sent or twin_updated:
+                success_count += 1
+            else:
+                error_count += 1
+                
+            if (success_count + error_count) % 10 == 0:
+                log.info(f"Telemetry updates: {success_count} successful, {error_count} failed")
 
     if iothub_client:
         try:
             iothub_client.shutdown()
+            log.info("IoT Hub client closed")
         except Exception:
             pass
+    
+    print(f"Stream finished. Total updates: {success_count} successful, {error_count} failed")
 
 if __name__ == "__main__":
     main()
