@@ -1,0 +1,11 @@
+Metric,Value
+Total Vibration (Std Dev),2.102600e-07
+Vibration Mean,4.085240e-08
+Vibration RMS,2.141893e-07
+H∞ Control RMS,0.188717
+Hybrid Control RMS,0.254509
+CNN Contribution RMS,0.074750
+Peak Vibration (m),1.443684e-06
+Min Vibration (m),-3.350401e-07
+Max Control Signal (A),1.614863
+Sampling Rate (Hz),4018.76

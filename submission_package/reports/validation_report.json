@@ -1,0 +1,21 @@
+{
+  "metrics": {
+    "sampling_rate_hz": 4018.7553959157894,
+    "rms_displacement_m": 2.126249185383637e-07,
+    "control_energy_hinf_J": 0.3555827262968716,
+    "control_energy_fused_J": 0.8907011709393399,
+    "control_energy_reduction_pct": -150.4905624115454,
+    "rms_u_hinf_A": 0.1903911633690928,
+    "rms_u_act_clamped_A": 0.30133006933583045,
+    "u_act_saturation_fraction": 0.0,
+    "prediction_phase_lag_s": -0.00024883325843028103,
+    "u_cnn_min_A": -0.2157826501998476,
+    "u_cnn_max_A": 0.61616204947349,
+    "u_act_clamped_min_A": -0.0525691024185877,
+    "u_act_clamped_max_A": 1.614862829598601
+  },
+  "plots": [
+    "C:\\Project 7\\output\\validation_time_domain.png",
+    "C:\\Project 7\\output\\validation_psd.png"
+  ]
+}

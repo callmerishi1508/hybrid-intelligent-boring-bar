@@ -1,0 +1,12 @@
+{"timestamp": 0.0786313096639688, "eventType": "chatter_warning", "details": {"mode2_residual": 2.9308927275042243e-08}}
+{"timestamp": 0.7691436018079987, "eventType": "chatter_warning", "details": {"mode2_residual": 2.933566043829888e-08}}
+{"timestamp": 2.1282708593541937, "eventType": "chatter_warning", "details": {"mode2_residual": 2.8978014188742566e-08}}
+{"timestamp": 3.4669937897091057, "eventType": "chatter_warning", "details": {"mode2_residual": 2.9391353546502824e-08}}
+{"timestamp": 4.518314306577043, "eventType": "chatter_warning", "details": {"mode2_residual": 2.8984384483922112e-08}}
+{"timestamp": 5.050070979842554, "eventType": "chatter_warning", "details": {"mode2_residual": 2.9086733437828364e-08}}
+{"timestamp": 5.915761885921501, "eventType": "chatter_warning", "details": {"mode2_residual": 2.9357264548657757e-08}}
+{"timestamp": 7.000426059419096, "eventType": "chatter_warning", "details": {"mode2_residual": 2.917908357688312e-08}}
+{"timestamp": 8.03955374662395, "eventType": "chatter_warning", "details": {"mode2_residual": 2.8995008536862315e-08}}
+{"timestamp": 8.640486065733079, "eventType": "chatter_warning", "details": {"mode2_residual": 2.9168397603534924e-08}}
+{"timestamp": 9.66816742305014, "eventType": "chatter_warning", "details": {"mode2_residual": 2.8969936969720882e-08}}
+{"timestamp": 8.83606900685928, "eventType": "predictive_maintenance", "details": {"score": 0.78, "recommendation": "Inspect spindle bearings"}}

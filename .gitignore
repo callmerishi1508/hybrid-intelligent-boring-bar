@@ -41,6 +41,7 @@ model_artifacts/
 *.pem
 *.pfx
 secrets.json
+secrets/
 
 # OS
 .DS_Store

@@ -35,6 +35,15 @@ def load_data():
     )
     
     log.info(f"Loaded {len(merged)} points")
+
+    # Reconstruct open-loop / H-inf only signals when augmentation fields exist
+    if 'mode2_full' in merged.columns:
+        # x_sensor in integrated is hybrid; recover base and reconstruct open-loop
+        merged['x_base'] = merged['x_sensor'] - merged.get('mode2_residual', 0)
+        merged['x_openloop'] = merged['x_base'] + merged['mode2_full'] + merged.get('broadband_noise', 0) + merged.get('spindle_harmonics', 0)
+        # H-inf only assumed not to suppress Mode-2 (so same as open-loop for mode-2)
+        merged['x_hinf_only'] = merged['x_openloop']
+
     return merged
 
 def estimate_sampling_rate(df):

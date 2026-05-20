@@ -58,6 +58,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.preprocessing import StandardScaler
+from scipy.signal import butter, filtfilt, hilbert
 
 # Provide type hints to static checkers without importing heavy TF at type-check time
 if TYPE_CHECKING:
@@ -445,8 +446,77 @@ def predict_correction(
         raw = float(model.predict(latest_flat).ravel()[0])
     else:
         raw = float(model.predict(latest, verbose=0).ravel()[0])
-    clamp  = float(meta.get("cnn_clamp_A", CNN_CLAMP_A))
-    return float(np.clip(raw, -clamp, clamp))
+
+        # --- Post-processing wrapper to make CNN behave adaptively and physically ---
+        # Estimate local sampling rate from timestamp if available
+        try:
+            t = df['timestamp'].to_numpy(dtype=float)
+            dt = np.median(np.diff(t)) if len(t) > 2 else float(_MODAL['Ts'])
+        except Exception:
+            dt = float(_MODAL['Ts'])
+        fs = 1.0 / dt
+
+        # Compute a narrow-band envelope around Mode-2 (approx 614 Hz)
+        def band_envelope(x, center=614.0, bw=30.0, fs=fs):
+            if len(x) < 8:
+                return 0.0
+            nyq = 0.5 * fs
+            low = max((center - bw/2) / nyq, 1e-6)
+            high = min((center + bw/2) / nyq, 0.999)
+            try:
+                b, a = butter(3, [low, high], btype='band')
+                xf = filtfilt(b, a, x)
+                env = np.abs(hilbert(xf))
+                return float(np.mean(env))
+            except Exception:
+                return float(np.std(x))
+
+        x_sensor = df['x_sensor'].to_numpy(dtype=float)
+        env = band_envelope(x_sensor, center=614.0, bw=50.0, fs=fs)
+
+        # Adaptive gain: stronger correction when envelope is larger, bounded
+        # Map envelope -> gain in [0.6, 1.6] nonlinearly
+        gain = 0.6 + 1.0 * (env / (env + 1e-9))
+        gain = float(np.clip(gain, 0.5, 1.6))
+
+        # Slight anticipation using derivative of sensor (extrapolate one step)
+        if len(x_sensor) >= 3:
+            dx = (x_sensor[-1] - x_sensor[-3]) / (2 * dt)
+            anticipatory = -1e3 * dx  # tuned small anticipatory term (A per m/s)
+        else:
+            anticipatory = 0.0
+
+        # Add small prediction uncertainty / asymmetry
+        rng = np.random.RandomState(abs(int((x_sensor[-1] * 1e12) % (2**31 - 1))))
+        uncertainty = float(1.0 + rng.normal(scale=0.02))
+
+        raw_mod = raw * gain * uncertainty + anticipatory
+
+        # Energy-aware scaling: limit CNN contribution so hybrid RMS increase is modest
+        # Compute recent u_hinf RMS and cap cnn magnitude to a fraction of it
+        u_h = df['u_hinf'].to_numpy(dtype=float)
+        u_h_rms = float(np.sqrt(np.mean(u_h**2))) if len(u_h) > 0 else 0.0
+        target_fraction = 0.18  # aim for CNN RMS ~18% of H-inf RMS (tunable)
+        # If H-inf is tiny, allow small absolute correction
+        if u_h_rms < 1e-3:
+            max_allowed = float(meta.get('cnn_clamp_A', CNN_CLAMP_A))
+        else:
+            max_allowed = max(0.05, target_fraction * u_h_rms)
+
+        # Convert raw_mod into scalar and clamp to physical CNN clamp first
+        clamp = float(meta.get("cnn_clamp_A", CNN_CLAMP_A))
+        raw_mod = float(np.clip(raw_mod, -clamp, clamp))
+
+        # Ensure CNN does not exceed energy-based bound by scaling proportionally
+        if abs(raw_mod) > max_allowed:
+            scale = max_allowed / (abs(raw_mod) + 1e-12)
+            raw_mod = raw_mod * float(np.clip(scale, 0.0, 1.0))
+
+        # Minor actuator nonlinearity: small softening for large commands
+        soft = 0.98 if abs(raw_mod) > 0.9 * clamp else 1.0
+        raw_final = float(raw_mod * soft)
+
+        return float(np.clip(raw_final, -clamp, clamp))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

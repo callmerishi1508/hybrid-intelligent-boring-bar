@@ -1,0 +1,10 @@
+Metric,Value
+H∞ Control Energy (A²·s),1459.00
+CNN Control Energy (A²·s),836.73
+Hybrid Control Energy (A²·s),3579.51
+H∞ RMS Signal (A),0.188717
+CNN RMS Signal (A),0.074750
+Hybrid RMS Signal (A),0.254509
+CNN Contribution (%),57.35%
+Actuator Saturation Events,0
+Saturation Percentage (%),0.00%

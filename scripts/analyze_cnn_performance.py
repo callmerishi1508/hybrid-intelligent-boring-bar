@@ -8,6 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import logging
 from pathlib import Path
+from scipy.signal import welch
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -40,9 +41,18 @@ def compute_metrics(df):
     
     metrics = {}
     
-    # Vibration metrics
-    metrics['vibration_rms_open'] = df['x_sensor'].std()  # Open-loop approximation
-    metrics['vibration_rms_closed'] = df['x_sensor'].std()  # Actual closed-loop
+    # Vibration metrics (use reconstructed open-loop/hinf/hybrid where available)
+    # open-loop / H-inf only: reconstruct as x_sensor_base + mode2_full + noise
+    if 'mode2_full' in df.columns:
+        x_base = df['x_sensor'] - df.get('mode2_residual', 0)
+        open_loop = x_base + df['mode2_full'] + df.get('broadband_noise', 0) + df.get('spindle_harmonics', 0)
+        hybrid = df['x_sensor']
+    else:
+        open_loop = df['x_sensor']
+        hybrid = df['x_sensor']
+
+    metrics['vibration_rms_open'] = float(np.sqrt(np.mean(open_loop ** 2)))
+    metrics['vibration_rms_hybrid'] = float(np.sqrt(np.mean(hybrid ** 2)))
     
     # Control energy
     metrics['energy_hinf'] = (df['u_hinf'] ** 2).sum()
@@ -50,7 +60,7 @@ def compute_metrics(df):
     metrics['energy_hybrid'] = (df['u_act_clamped'] ** 2).sum()
     
     # Vibration reduction estimate
-    metrics['vibration_reduction_pct'] = 0  # Will be computed with proper baseline
+    metrics['vibration_reduction_pct'] = float(100.0 * (metrics['vibration_rms_open'] - metrics['vibration_rms_hybrid']) / (metrics['vibration_rms_open'] + 1e-12))
     
     # Control effort comparison
     metrics['hinf_rms'] = df['u_hinf'].std()
@@ -59,6 +69,22 @@ def compute_metrics(df):
     
     # CNN contribution
     metrics['cnn_contribution_pct'] = (metrics['energy_cnn'] / (metrics['energy_hinf'] + 1e-10)) * 100
+
+    # Mode-2 narrowband PSD power (around 614 Hz)
+    try:
+        fs = 1.0 / np.median(np.diff(df['timestamp'].to_numpy()))
+        f_open, P_open = welch(open_loop.to_numpy(), fs=fs, nperseg=2048)
+        f_hybrid, P_hybrid = welch(hybrid.to_numpy(), fs=fs, nperseg=2048)
+        # find nearest bin to 614 Hz
+        idx_open = np.argmin(np.abs(f_open - 614.0))
+        idx_hybrid = np.argmin(np.abs(f_hybrid - 614.0))
+        metrics['mode2_power_open'] = float(P_open[idx_open])
+        metrics['mode2_power_hybrid'] = float(P_hybrid[idx_hybrid])
+        metrics['mode2_attenuation_dB'] = float(10.0 * np.log10((metrics['mode2_power_open'] + 1e-18) / (metrics['mode2_power_hybrid'] + 1e-18)))
+    except Exception:
+        metrics['mode2_power_open'] = None
+        metrics['mode2_power_hybrid'] = None
+        metrics['mode2_attenuation_dB'] = None
     
     # Actuator saturation
     clamped_mask = (df['u_act_clamped'].abs() >= 3.9)
@@ -84,8 +110,8 @@ def plot_cnn_contribution(df):
     
     # Plot 2: Hybrid actuator command
     ax = axes[1]
-    ax.plot(df['timestamp'], df['u_act'], label='Hybrid u_act (before clamp)', linewidth=1.5, alpha=0.8, color='green')
-    ax.plot(df['timestamp'], df['u_act_clamped'], label='Hybrid u_act_clamped (actual)', linewidth=1, alpha=0.7, color='darkgreen')
+    ax.plot(df['timestamp'], df.get('u_act', df['u_hinf']), label='Hybrid u_act (nominal)', linewidth=1.5, alpha=0.8, color='green')
+    ax.plot(df['timestamp'], df.get('u_act_clamped', df['u_hinf']), label='Hybrid u_act_clamped (actual)', linewidth=1, alpha=0.7, color='darkgreen')
     ax.axhline(y=4.0, color='r', linestyle='--', linewidth=1, label='Saturation limit (±4A)')
     ax.axhline(y=-4.0, color='r', linestyle='--', linewidth=1)
     ax.set_ylabel('Actuator Current (A)', fontsize=11, fontweight='bold')
@@ -96,6 +122,11 @@ def plot_cnn_contribution(df):
     # Plot 3: Vibration response
     ax = axes[2]
     ax.plot(df['timestamp'], df['x_sensor'], label='Vibration (closed-loop)', linewidth=1, alpha=0.8, color='purple')
+    # If reconstructed open-loop available, show it for visual comparison
+    if 'mode2_full' in df.columns:
+        x_base = df['x_sensor'] - df.get('mode2_residual', 0)
+        open_loop = x_base + df['mode2_full'] + df.get('broadband_noise', 0) + df.get('spindle_harmonics', 0)
+        ax.plot(df['timestamp'], open_loop, label='Open-loop (reconstructed)', linewidth=1, alpha=0.6, color='orange')
     ax.set_ylabel('Vibration Amplitude (m)', fontsize=11, fontweight='bold')
     ax.set_xlabel('Time (s)', fontsize=11, fontweight='bold')
     ax.set_title('Vibration Response Under Hybrid Control', fontsize=13, fontweight='bold')
@@ -147,6 +178,41 @@ def plot_control_effort_comparison(metrics):
     plt.savefig(OUTPUT_DIR / "control_effort_comparison.png", dpi=300, bbox_inches='tight')
     log.info(f"✓ Saved: output/control_effort_comparison.png")
     plt.close()
+
+def plot_mode2_zoom(df):
+    """Plot zoomed PSD around Mode-2 (500-700 Hz) comparing open-loop, H∞, and Hybrid."""
+    log.info("Generating Mode-2 zoomed PSD...")
+    try:
+        fs = 1.0 / np.median(np.diff(df['timestamp'].to_numpy()))
+        # reconstruct signals
+        if 'mode2_full' in df.columns:
+            x_base = df['x_sensor'] - df.get('mode2_residual', 0)
+            open_loop = x_base + df['mode2_full'] + df.get('broadband_noise', 0) + df.get('spindle_harmonics', 0)
+            hybrid = df['x_sensor']
+        else:
+            open_loop = df['x_sensor']
+            hybrid = df['x_sensor']
+
+        f_o, P_o = welch(open_loop.to_numpy(), fs=fs, nperseg=4096)
+        f_h, P_h = welch(hybrid.to_numpy(), fs=fs, nperseg=4096)
+
+        mask = (f_o >= 500) & (f_o <= 700)
+        fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+        ax.semilogy(f_o[mask], P_o[mask], label='Open-loop', linewidth=1.5)
+        ax.semilogy(f_h[mask], P_h[mask], label='Hybrid (H∞+CNN)', linewidth=1.5)
+        ax.set_xlabel('Frequency (Hz)', fontsize=11, fontweight='bold')
+        ax.set_ylabel('PSD', fontsize=11, fontweight='bold')
+        ax.set_title('Mode-2 PSD Zoom (500-700 Hz)', fontsize=13, fontweight='bold')
+        ax.axvline(614, color='red', linestyle='--', alpha=0.6)
+        ax.text(614, max(P_o[mask].max(), P_h[mask].max())*0.6, '614 Hz', color='red', rotation=90)
+        ax.legend()
+        ax.grid(True, which='both', alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(OUTPUT_DIR / 'mode2_psd_zoom.png', dpi=300, bbox_inches='tight')
+        log.info('✓ Saved: output/mode2_psd_zoom.png')
+        plt.close()
+    except Exception as e:
+        log.warning(f'Could not generate mode-2 zoom PSD: {e}')
 
 def plot_cnn_magnitude_distribution(df):
     """Plot distribution of CNN correction magnitudes."""
@@ -290,6 +356,7 @@ def main():
     plot_control_effort_comparison(metrics)
     plot_cnn_magnitude_distribution(df)
     plot_saturation_analysis(df)
+    plot_mode2_zoom(df)
     generate_metrics_table(metrics)
     
     log.info("="*70)

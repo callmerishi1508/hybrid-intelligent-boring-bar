@@ -55,9 +55,11 @@ def main():
     log.info("="*80)
     
     scripts = [
+        ("generate_datasets.py", "Generate Synthetic Datasets"),
         ("analyze_cnn_performance.py", "CNN Performance Analysis"),
         ("analyze_openloop_vs_closedloop.py", "Open-Loop vs Closed-Loop Analysis"),
         ("generate_final_report.py", "Final Validation Report Generation"),
+        ("publication_analysis.py", "Publication-grade Analysis & Plots"),
     ]
     
     results = {}
